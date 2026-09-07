@@ -1,53 +1,202 @@
-# Autonomous Diagnostic and Agentic Management System (ADAMS)
+# ADAMS
 
-## 1. Overview
-ADAMS is a state-driven, multi-agent orchestration framework designed for autonomous software engineering. The system operates on a closed-loop, file-based design where a central Manager Agent analyzes the project state and dynamically delegates tasks to specialized sub-agents until all issues are resolved. 
+## Autonomous Diagnostic and Agentic Management System
 
-Instead of relying on complex, heavy AI reasoning at every step, ADAMS utilizes structured Markdown files (`prompt.md` and `prompt_done.md`) to maintain state, pass context, and ensure a strict, self-correcting execution loop. The workflow is entirely reactive to concrete file states, reducing token overhead and maximizing practical reliability for real-world developer workflows.
+ADAMS is a reusable workflow for AI coding agents.
 
-## 2. The Core Execution Loop
-The system runs in a continuous loop that only breaks when the project reaches a zero-error state. 
+Its purpose is to automate a development process that would normally require a developer to repeatedly organize AI agents by hand: understand the project, break the work into tasks, let different agents work on those tasks, check the results, and continue until the important remaining problems have been resolved.
 
-### Phase 1: Diagnostics and Task Generation (The Manager)
-* **Initialization:** The Manager Agent wakes up and reads the existing project documentation (MD files, readmes, etc.) to understand the context.
-* **Prompt Generation:** The Manager acts as the diagnostic brain. It generates a master execution plan saved strictly as `prompt.md`.
-* **Strict Architecture:** The `prompt.md` file acts as the single source of truth for the cycle. It is structured with system parameters and AI directions clearly defined at the top, followed by a definitive task allocation table at the bottom. This table isolates and assigns specific tasks to concurrent models (e.g., assigning API endpoint logic to a backend agent and UI fixes to a UX agent).
+ADAMS turns that process into a repeatable skill that an AI agent can follow.
 
-### Phase 2: Parallel Execution (Specialized Agents)
-* The system reads the bottom table of `prompt.md` and spins up only the specific agents required for this cycle.
-* These specialized models run concurrently, focusing solely on their isolated sections of the codebase (e.g., two frontend pages, one database schema).
-* They operate strictly within the boundaries of the `prompt.md` directives, keeping their cognitive load light and focused on implementation.
+## What ADAMS Is For
 
-### Phase 3: Verification and Handoff (The Validator)
-* Once the specialized agents complete their tasks, a final, dedicated Validator/Tester Agent is triggered.
-* **Validation:** This agent tests all recent changes, checks for regressions, and compiles the results.
-* **State Reporting:** It generates a new file named `prompt_done.md`. The instructions for this agent are highly specific: it must aggressively extract any remaining errors, skipped tasks, or unfixed issues, isolating them in a dedicated `Problems Not Solved` section within the file.
-* **Active Triggering (No Polling):** Instead of the Manager wasting resources polling the system to see if the work is done, the Validator Agent executes a direct terminal command/prompt. This command actively wakes up the Manager, pointing it directly to the newly generated `prompt_done.md` file with the context needed to start the next evaluation.
+When working on a software project with AI, it is common to do the same coordination work again and again:
 
-### Phase 4: Evaluation and Iteration
-* The Manager reads `prompt_done.md`.
-* **If errors exist:** The Manager digests the `Problems Not Solved` section and instantly generates a *new* `prompt.md` file, launching a fresh cycle dedicated solely to resolving the remaining technical debt.
-* **If zero errors exist:** The loop breaks. 
+- explain the project and the objective
+- decide what needs to be done
+- split the work into manageable tasks
+- choose which agents should work on difficult or simple tasks
+- start several agents
+- tell them how to coordinate
+- check what they actually changed
+- identify what is still wrong
+- start another round of work
 
-### Phase 5: Developer Handoff
-* When no problems remain, the Manager Agent performs its final task: generating a developer-friendly summary file.
-* This file outlines exactly what was changed in the project, the specific problems that were solved during the loops, and strategic suggestions for the next features or architectural improvements the developer should focus on.
-* The Manager then safely halts execution.
+ADAMS exists to make that workflow repeatable.
 
-## 3. Core System Components
+Instead of manually explaining the process every time, an agent can use the ADAMS skill and follow the same working method from project to project.
 
-### A. The Agents
-1. **The Manager Agent:** The central orchestrator. Requires deep context but does no coding. Its sole job is diagnosing state, writing `prompt.md`, and writing the final summary.
-2. **Specialized Workers:** Lightweight, highly focused implementation models (Backend, Frontend, UX, Database). They require minimal context beyond their specific assignment in the `prompt.md` table.
-3. **The Validator Agent:** The final checkpoint. A testing-focused model that runs the code, validates logic, and strictly documents failures.
+## The Core Idea
 
-### B. The State Files
-1. **`prompt.md` (The Blueprint):** Contains the top-level AI directions and the bottom table assigning specific tasks to specific agents.
-2. **`prompt_done.md` (The Reality Check):** Contains the raw results of the execution phase, dominated by the critical `Problems Not Solved` section.
-3. **`final_summary.md` (The Handoff):** The human-readable conclusion of the successful loop, detailing changes, resolutions, and future suggestions.
+ADAMS separates the work into three responsibilities:
 
-## 4. Advantages of this Architecture
-* **High Efficiency & Low Cost:** By separating the "thinking" (Manager) from the "doing" (Workers), you avoid running heavy, expensive models for simple codebase changes.
-* **Self-Correcting:** The strict requirement for the Validator to extract "unsolved problems" guarantees that edge cases and failed implementations are automatically caught and fed back into the next loop.
-* **Event-Driven Handoff:** Having the Validator actively trigger the Manager via a direct command eliminates idle polling, making the system highly responsive.
-* **Developer-Centric:** The system operates exactly how a human engineering team does—plan, build, QA, revise, and report—leaving the developer with a clean, summarized output rather than a chaotic log history.
+**Manager** — understands the overall objective, organizes the work, and decides what should happen next.
+
+**Workers** — perform the implementation work on focused tasks.
+
+**Validator** — checks the resulting project and determines what is actually complete and what still needs attention.
+
+The workflow is:
+
+```text
+Understand
+    ↓
+Plan
+    ↓
+Work
+    ↓
+Validate
+    ↓
+Re-plan when necessary
+    ↓
+Repeat until complete
+```
+
+## The Shared Project File
+
+ADAMS uses a single shared file called `prompt.md` for the current work cycle.
+
+The file contains the project context, instructions, task descriptions, task complexity, and task status.
+
+Workers read the same file and claim available tasks from it.
+
+A task normally moves through:
+
+```text
+PENDING → IN PROGRESS → DONE
+```
+
+A worker must claim a task before working on it and must not deliberately work on a task that another worker has already marked `IN PROGRESS` or `DONE`.
+
+The file therefore gives the agents a common view of the work instead of requiring a separate file for every task.
+
+## Complexity-Based Work
+
+Every task has one of three complexity levels:
+
+- **High**
+- **Medium**
+- **Low**
+
+Complexity describes the difficulty of a task. It does not permanently assign a task to a particular model.
+
+Different workers can use different priority orders. For example:
+
+```text
+Strong worker:
+High → Medium → Low
+
+Standard worker:
+Medium → Low → High
+
+Light worker:
+Low → Medium → High
+```
+
+This makes it possible to use stronger agents where they provide the most value while allowing lighter agents to handle simpler work.
+
+## Working With Different AI Agents
+
+ADAMS is intended to be independent from any single AI coding tool.
+
+Today, a project may use agents such as OpenCode or Google Antigravity. Later, the same ADAMS workflow can be used with another coding agent without changing the underlying method.
+
+The workflow should describe **what the agents need to do**, not depend on one specific vendor or application.
+
+## First-Time Setup
+
+When ADAMS is used in a new environment, the agent should help the user configure the available workers for that environment.
+
+The setup should identify things such as:
+
+- which coding agents are available
+- which agent or model should be preferred for High-complexity work
+- which should be preferred for Medium-complexity work
+- which should be preferred for Low-complexity work
+- which tool should be used for validation, when applicable
+
+That configuration should be stored separately from the core ADAMS workflow so the skill itself remains reusable.
+
+The workflow can then be reused without asking the user to repeat the same configuration every time.
+
+## How a Typical ADAMS Run Works
+
+A normal run looks like this:
+
+```text
+User provides objective
+        ↓
+ADAMS Manager understands the project
+        ↓
+Manager creates or updates prompt.md
+        ↓
+Workers are started
+        ↓
+Workers claim available tasks
+        ↓
+Workers implement and verify their work
+        ↓
+Validator checks the project
+        ↓
+Remaining problems are identified
+        ↓
+Manager creates the next work cycle
+        ↓
+Repeat
+```
+
+The process ends when validation shows that there are no relevant unresolved problems.
+
+## Why ADAMS Matters
+
+ADAMS is designed to make AI-assisted development more consistent and easier to repeat.
+
+Instead of treating every AI session as a separate conversation, it provides a shared way of working:
+
+**diagnose → organize → execute → verify → correct**
+
+The value of ADAMS is not a particular model or coding tool. The value is the workflow itself.
+
+## The Purpose of the Skill
+
+The ADAMS skill teaches an AI agent how to use this workflow.
+
+It gives the agent the rules for:
+
+- understanding the project
+- creating and maintaining `prompt.md`
+- organizing tasks
+- using complexity to guide worker priorities
+- coordinating multiple workers
+- validating results
+- handling incomplete work and newly discovered problems
+- deciding when to start another cycle
+- deciding when the work is complete
+
+The skill is meant to be reusable across projects and compatible with different agent tools.
+
+## Project Files Used by the Workflow
+
+The workflow uses a small set of project-level state files:
+
+```text
+prompt.md
+prompt_done.md
+final_summary.md
+```
+
+`prompt.md` describes the current work cycle.
+
+`prompt_done.md` records the result of validation and the problems that remain.
+
+`final_summary.md` records the final validated outcome.
+
+These files make the workflow visible and understandable to both the developer and the agents.
+
+## The Long-Term Vision
+
+ADAMS is intended to become a reusable skill that can be carried from one AI coding environment to another.
+
+The goal is simple: configure the available agents once, give the Manager an objective, and let the ADAMS workflow organize the rest of the work in a consistent way.
+
+The underlying method should remain stable even as the AI tools used to perform the work change.

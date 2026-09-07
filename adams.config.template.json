@@ -1,0 +1,37 @@
+{
+  "workers": {
+    "high": {
+      "agent": "[agent name, e.g., opencode, claude-code, cursor]",
+      "model": "[model ID, e.g., anthropic/claude-sonnet-4-20250514]",
+      "priority": "High → Medium → Low",
+      "description": "Strong worker for complex tasks: architecture, multi-file refactors, difficult bugs"
+    },
+    "medium": {
+      "agent": "[agent name]",
+      "model": "[model ID]",
+      "priority": "Medium → Low → High",
+      "description": "Standard worker for moderate tasks: feature implementation, component builds"
+    },
+    "low": {
+      "agent": "[agent name]",
+      "model": "[model ID]",
+      "priority": "Low → Medium → High",
+      "description": "Light worker for simple tasks: styling, docs, small fixes"
+    }
+  },
+  "validator": {
+    "agent": "[agent name]",
+    "model": "[model ID]",
+    "description": "Runs tests, checks build, verifies changes, identifies regressions"
+  },
+  "verification": {
+    "build": "[e.g., npm run build, cargo build, python -m build]",
+    "test": "[e.g., npm run test, pytest, cargo test]",
+    "lint": "[e.g., npm run lint, ruff check, clippy]",
+    "typecheck": "[e.g., npm run typecheck, mypy, tsc --noEmit]"
+  },
+  "concurrency": {
+    "max_workers": 3,
+    "avoid_parallel": ["same file edits", "database migrations", "dependent tasks"]
+  }
+}
