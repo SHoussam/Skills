@@ -51,6 +51,9 @@ Responsibilities:
 - Determine worker strategy and concurrency
 - Check for config (project → global → setup)
 - Start workers
+- Detect stalled workers (IN PROGRESS but no file edits)
+- Reassign or complete stalled tasks
+- Use fallback agent when primary fails, times out, or hits quota
 - Interpret validation results
 - Decide whether another cycle is needed
 - Generate final summary when validated work is complete
@@ -60,6 +63,9 @@ Rules:
 - Re-diagnose when problems persist across multiple cycles
 - Avoid creating work just to keep workers busy
 - Run interactive setup if no config exists anywhere
+- Step in directly when workers stall on planning without executing
+- Never auto-fill config values — always ask the user
+- Never generate models or commands from your own knowledge — ask the user
 
 ### Worker
 
@@ -141,31 +147,60 @@ Project config overrides global config. Use project-specific config when differe
 
 ### Interactive setup
 
-When no config exists anywhere, the Manager runs interactive setup:
+When no config exists anywhere, the Manager runs interactive setup. **Do not auto-fill, do not suggest models, do not generate from knowledge. Ask the user for everything.**
 
 1. **Ask location:**
-   - `Global` → generate at `~/.config/adams/adams.config.json`
-   - `Workspace` → generate at `./adams.config.json`
+   - "Should the config be **global** (saved at `~/.config/adams/adams.config.json`) or **workspace** (saved at `./adams.config.json`)?"
 
-2. **Ask agents:**
-   - Which coding agents are available? (opencode, claude-code, cursor, etc.)
-   - Agent/model for High complexity tasks?
-   - Agent/model for Medium complexity tasks?
-   - Agent/model for Low complexity tasks?
-   - Agent for validation?
+2. **Ask about each worker — one at a time:**
 
-3. **Ask verification:**
-   - Build command? (e.g., `npm run build`)
-   - Test command? (e.g., `npm run test`)
-   - Lint command? (e.g., `npm run lint`)
-   - Typecheck command? (e.g., `npm run typecheck`)
+   For **High** complexity:
+   - "What agent name? (e.g., opencode, agy, cursor)"
+   - "What model? (e.g., gemini-3.8-flash-high)"
+   - "What command runs this agent? (e.g., `opencode run`, `agy -p`)"
+   - "What priority order? (e.g., High → Medium → Low)"
+   - "What fallback agent? (used if primary fails)"
+   - "What fallback model?"
+   - "What fallback command?"
 
-4. **Ask concurrency:**
-   - Max concurrent workers? (default: 3)
+   For **Medium** complexity:
+   - "What agent name?"
+   - "What model?"
+   - "What command runs this agent?"
+   - "What priority order?"
+   - "What fallback agent?"
+   - "What fallback model?"
+   - "What fallback command?"
 
-5. **Generate config** at chosen location
+   For **Low** complexity:
+   - "What agent name?"
+   - "What model?"
+   - "What command runs this agent?"
+   - "What priority order?"
+   - "What fallback agent?"
+   - "What fallback model?"
+   - "What fallback command?"
 
-6. **Continue workflow**
+3. **Ask about validation:**
+   - "What agent for validation?"
+   - "What model for validation?"
+   - "What fallback agent for validation?"
+   - "What fallback model for validation?"
+
+4. **Ask about verification commands:**
+   - "What build command? (e.g., npm run build)"
+   - "What test command? (e.g., npm run test)"
+   - "What lint command? (e.g., npm run lint)"
+   - "What typecheck command? (e.g., npm run typecheck)"
+
+5. **Ask about concurrency:**
+   - "How many workers in parallel? (default: 3)"
+
+6. **Confirm** the config with the user before saving
+
+7. **Save** to chosen location
+
+8. **Continue workflow**
 
 ### Config structure
 
@@ -173,28 +208,52 @@ When no config exists anywhere, the Manager runs interactive setup:
 {
   "workers": {
     "high": {
-      "agent": "opencode",
-      "model": "anthropic/claude-sonnet-4-20250514",
+      "agent": "agy",
+      "model": "gemini-3.8-flash-high",
+      "command": "agy --model gemini-3.8-flash-high -p",
       "priority": "High → Medium → Low",
-      "description": "Strong worker for complex tasks"
+      "description": "Strong worker for complex tasks",
+      "fallback": {
+        "agent": "opencode",
+        "model": "openrouter/nvidia/nemotron-3-super-120b-a12b:free",
+        "command": "opencode run -m openrouter/nvidia/nemotron-3-super-120b-a12b:free"
+      }
     },
     "medium": {
-      "agent": "opencode",
-      "model": "anthropic/claude-sonnet-4-20250514",
+      "agent": "agy",
+      "model": "gemini-3.8-flash-medium",
+      "command": "agy --model gemini-3.8-flash-medium -p",
       "priority": "Medium → Low → High",
-      "description": "Standard worker for moderate tasks"
+      "description": "Standard worker for moderate tasks",
+      "fallback": {
+        "agent": "opencode",
+        "model": "opencode/mimo-v2.5-free",
+        "command": "opencode run -m opencode/mimo-v2.5-free"
+      }
     },
     "low": {
-      "agent": "opencode",
-      "model": "anthropic/claude-haiku-4-20250414",
+      "agent": "agy",
+      "model": "gemini-3.8-flash-low",
+      "command": "agy --model gemini-3.8-flash-low -p",
       "priority": "Low → Medium → High",
-      "description": "Light worker for simple tasks"
+      "description": "Light worker for simple tasks",
+      "fallback": {
+        "agent": "opencode",
+        "model": "opencode/ling-3.0-flash-fin-free",
+        "command": "opencode run -m opencode/ling-3.0-flash-fin-free"
+      }
     }
   },
   "validator": {
     "agent": "opencode",
-    "model": "anthropic/claude-sonnet-4-20250514",
-    "description": "Runs tests, checks build, verifies changes"
+    "model": "opencode/mimo-v2.5-free",
+    "command": "opencode run -m opencode/mimo-v2.5-free",
+    "description": "Runs tests, checks build, verifies changes",
+    "fallback": {
+      "agent": "opencode",
+      "model": "openrouter/nvidia/nemotron-3.5-lightning:free",
+      "command": "opencode run -m openrouter/nvidia/nemotron-3.5-lightning:free"
+    }
   },
   "verification": {
     "build": "npm run build",
@@ -208,6 +267,8 @@ When no config exists anywhere, the Manager runs interactive setup:
   }
 }
 ```
+
+Each worker and validator has a `fallback` object with an alternative agent, model, and command. Use the fallback when the primary agent fails, times out, or hits quota.
 
 Update the config when switching projects or changing available agents.
 
@@ -242,14 +303,28 @@ Use these prompts when spawning workers. Each prompt tells the agent exactly how
 ### Strong worker (High → Medium → Low)
 
 ```
-Read prompt.md, strictly follow the rules by immediately changing a task's status to IN PROGRESS before starting work and setting it to DONE when finished (never touching 'IN PROGRESS' tasks); start with the 'High' complexity tasks first, then proceed to the others.
+Read prompt.md, strictly follow the rules by immediately changing a task's status to IN PROGRESS before starting work and setting it to DONE when finished (never touching 'IN PROGRESS' tasks); start with the 'High' complexity tasks first, then proceed to the others. You must edit actual files — planning without executing is not allowed. If you mark a task IN PROGRESS, you must complete the implementation before moving on.
 ```
 
 ### Light worker (Low → Medium → High)
 
 ```
-Read prompt.md, strictly follow the rules by immediately changing a task's status to IN PROGRESS before starting work and setting it to DONE when finished (never touching 'IN PROGRESS' tasks); start with the 'Low' complexity tasks first, then proceed to the others.
+Read prompt.md, strictly follow the rules by immediately changing a task's status to IN PROGRESS before starting work and setting it to DONE when finished (never touching 'IN PROGRESS' tasks); start with the 'Low' complexity tasks first, then proceed to the others. You must edit actual files — planning without executing is not allowed. If you mark a task IN PROGRESS, you must complete the implementation before moving on.
 ```
+
+### Handling stalled workers
+
+If a worker marks a task IN PROGRESS but does not produce file edits within a reasonable time, the Manager should:
+
+1. Check if the worker is stuck in planning mode
+2. Reassign the task to a different worker
+3. If no workers available, the Manager completes the task directly
+4. Log the stall in `prompt_done.md` under "Regressions"
+
+Signs of a stalled worker:
+- Task is IN PROGRESS but no files were edited
+- Worker output contains only plans or descriptions, no implementation
+- Worker is iterating on approach without committing to edits
 
 ## Key files
 
@@ -274,13 +349,13 @@ Template:
 
 ## System Instructions for AI Agent ([Current Phase])
 
-> **Multi-Agent Compatible:** Multiple agents can run this file in parallel. Each agent picks one available task, claims it, executes, and finishes before picking another. Never touch a task that is already `IN PROGRESS` or `DONE`.
+> **Multi-Agent Compatible:** Multiple agents can run this file in parallel. Each agent picks one available task, claims it, executes, and finishes before picking another. Never touch a task that is already `IN PROGRESS` or `DONE`. **Planning without executing is not allowed** — you must edit actual files to complete a task.
 
 ### Workflow
 1. **Context Initialization:** Read all project `.md` files and review relevant specifications.
 2. **Task Selection:** Find the first task with the status `PENDING`.
 3. **Atomic Start (Claim):** Change its status to `IN PROGRESS`, write your Agent identifier, and log the start time.
-4. **Execution:** Build/refactor the component following the task's instructions.
+4. **Execution:** Build/refactor the component following the task's instructions. **Edit actual files.**
 5. **Verification:** Run the verification command specified in the task.
 6. **Completion:** Mark the status as `DONE`, log the completion time, and output a short summary report.
 
