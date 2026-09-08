@@ -14,6 +14,28 @@ Before planning or executing, read the project's actual state: source files, tes
 
 Identify the objective clearly before creating tasks. If the brief does not specify what "done" looks like, define it yourself and confirm with the user. Ambiguous objectives produce scattered work.
 
+## Skill discovery
+
+Before creating tasks, scan all recognized skill directories and build a list of available skills with their names and descriptions. Skill directories are:
+
+```
+.opencode/skills/<name>/SKILL.md
+~/.config/opencode/skills/<name>/SKILL.md
+.claude/skills/<name>/SKILL.md
+~/.claude/skills/<name>/SKILL.md
+.agents/skills/<name>/SKILL.md
+~/.agents/skills/<name>/SKILL.md
+```
+
+Read each SKILL.md frontmatter to get the `name` and `description`. When creating tasks, match task content against skill descriptions and attach relevant skill names to each task. If no skill matches, use `none`.
+
+Matching heuristics:
+- UI/visual/design tasks → `frontend-design`
+- Social coding/vit tasks → `using-vit`
+- Skill validation tasks → `skill-validator`
+- Project-specific skills → match by description keywords
+- No relevant skill → `none`
+
 ## Workflow principles
 
 The workflow operates in cycles. Each cycle follows:
@@ -40,17 +62,20 @@ A cycle ends only when validation confirms zero relevant unresolved problems for
 
 ### Manager
 
-The Manager coordinates and reasons. It does not implement.
+The Manager coordinates and reasons. It does not implement — unless only one agent is available.
+
+When multiple agents exist, the Manager delegates to workers. When only one agent exists (single-agent scenario), the Manager implements directly while still following the workflow: create prompt.md, track tasks, validate results.
 
 Responsibilities:
 - Understand the project's objective and current state
 - Inspect relevant context: code, tests, docs, prior validation
 - Diagnose concrete problems
+- Discover available skills and attach relevant ones to tasks
 - Create bounded, actionable tasks with clear scope
 - Assign complexity: High, Medium, or Low
 - Determine worker strategy and concurrency
 - Check for config (project → global → setup)
-- Start workers
+- Start workers (or implement directly if single-agent)
 - Detect stalled workers (IN PROGRESS but no file edits)
 - Reassign or complete stalled tasks
 - Use fallback agent when primary fails, times out, or hits quota
@@ -75,6 +100,8 @@ Responsibilities:
 - Read `prompt.md`
 - Find an available PENDING task
 - Claim it: change status to IN PROGRESS, record agent and start time
+- If the task lists Skills, read each referenced SKILL.md before starting implementation
+- Follow the skill guidance during implementation
 - Implement only the requested scope
 - Verify the result when practical
 - Mark DONE only when genuinely complete
@@ -106,12 +133,26 @@ Rules:
 - Worker reports are evidence, not proof
 - Evaluate the project itself, not the claims about it
 
+## Single-agent vs multi-agent
+
+Before starting work, detect whether this is a single-agent or multi-agent scenario:
+
+1. Check if `adams.config.json` exists (project or global)
+2. If it exists, read the workers config
+3. If only one worker is configured → single-agent mode
+4. If multiple workers are configured → multi-agent mode
+
+**Single-agent mode:** The Manager implements directly. Still create prompt.md, track tasks, and validate results. The workflow is the same, but there's no delegation.
+
+**Multi-agent mode:** The Manager delegates to workers via the configured agents. Workers claim tasks from prompt.md and implement them.
+
 ## Task model
 
 Every task has:
 - Task ID (TSK-01, TSK-02, ...)
 - Description
 - Complexity (High, Medium, Low)
+- Skills (comma-separated skill names, or `none`)
 - Status (PENDING, IN PROGRESS, DONE)
 - Agent owner (when claimed)
 - Start time (when claimed)
@@ -303,13 +344,13 @@ Use these prompts when spawning workers. Each prompt tells the agent exactly how
 ### Strong worker (High → Medium → Low)
 
 ```
-Read prompt.md, strictly follow the rules by immediately changing a task's status to IN PROGRESS before starting work and setting it to DONE when finished (never touching 'IN PROGRESS' tasks); start with the 'High' complexity tasks first, then proceed to the others. You must edit actual files — planning without executing is not allowed. If you mark a task IN PROGRESS, you must complete the implementation before moving on.
+Read prompt.md, strictly follow the rules by immediately changing a task's status to IN PROGRESS before starting work and setting it to DONE when finished (never touching 'IN PROGRESS' tasks); start with the 'High' complexity tasks first, then proceed to the others. If a task lists Skills, read each referenced SKILL.md and follow its guidance. You must edit actual files — planning without executing is not allowed. If you mark a task IN PROGRESS, you must complete the implementation before moving on.
 ```
 
 ### Light worker (Low → Medium → High)
 
 ```
-Read prompt.md, strictly follow the rules by immediately changing a task's status to IN PROGRESS before starting work and setting it to DONE when finished (never touching 'IN PROGRESS' tasks); start with the 'Low' complexity tasks first, then proceed to the others. You must edit actual files — planning without executing is not allowed. If you mark a task IN PROGRESS, you must complete the implementation before moving on.
+Read prompt.md, strictly follow the rules by immediately changing a task's status to IN PROGRESS before starting work and setting it to DONE when finished (never touching 'IN PROGRESS' tasks); start with the 'Low' complexity tasks first, then proceed to the others. If a task lists Skills, read each referenced SKILL.md and follow its guidance. You must edit actual files — planning without executing is not allowed. If you mark a task IN PROGRESS, you must complete the implementation before moving on.
 ```
 
 ### Handling stalled workers
@@ -355,9 +396,10 @@ Template:
 1. **Context Initialization:** Read all project `.md` files and review relevant specifications.
 2. **Task Selection:** Find the first task with the status `PENDING`.
 3. **Atomic Start (Claim):** Change its status to `IN PROGRESS`, write your Agent identifier, and log the start time.
-4. **Execution:** Build/refactor the component following the task's instructions. **Edit actual files.**
-5. **Verification:** Run the verification command specified in the task.
-6. **Completion:** Mark the status as `DONE`, log the completion time, and output a short summary report.
+4. **Skill Loading:** If the task lists Skills, read each referenced SKILL.md and follow its guidance.
+5. **Execution:** Build/refactor the component following the task's instructions. **Edit actual files.**
+6. **Verification:** Run the verification command specified in the task.
+7. **Completion:** Mark the status as `DONE`, log the completion time, and output a short summary report.
 
 ---
 
@@ -365,6 +407,7 @@ Template:
 
 ### Prompt for [TSK-XX]: [Task Title]
 **Context:** [Why this task is needed and how it fits into the user journey]
+**Skills:** [comma-separated skill names, e.g., `frontend-design`, `vit`, or `none`]
 **Task:**
 1. [Step 1: Specific instruction on what to build or fix]
 2. [Step 2: Specific constraints, design requirements, or edge cases]
@@ -372,6 +415,7 @@ Template:
 
 ### Prompt for [TSK-XX]: [Task Title]
 **Context:** [Context description]
+**Skills:** [skill names or `none`]
 **Task:**
 1. [Step 1]
 2. [Step 2]
@@ -383,11 +427,11 @@ Template:
 
 ## Status Table
 
-| Task ID | Component / Task Description | Complexity | Status | Agent | Start Time | Completion Time |
-| :--- | :--- | :--- | :--- | :--- | :--- | :--- |
-| **TSK-01** | [Task Description] | High | PENDING | - | - | - |
-| **TSK-02** | [Task Description] | Medium | PENDING | - | - | - |
-| **TSK-03** | [Task Description] | Low | PENDING | - | - | - |
+| Task ID | Component / Task Description | Complexity | Skills | Status | Agent | Start Time | Completion Time |
+| :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- |
+| **TSK-01** | [Task Description] | High | [skills] | PENDING | - | - | - |
+| **TSK-02** | [Task Description] | Medium | [skills] | PENDING | - | - | - |
+| **TSK-03** | [Task Description] | Low | [skills] | PENDING | - | - | - |
 ```
 
 ### prompt_done.md
